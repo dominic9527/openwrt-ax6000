@@ -1,15 +1,28 @@
 
 #!/bin/sh
-# Automatically configure PBR on first boot.
-# Keep this script until PBR and DirectBridge are ready.
+# Redmi AX6000
+# First boot PBR configuration
+# DirectBridge -> br-direct -> 192.168.2.1
 
-# Wait for PBR installation
-[ -x /etc/init.d/pbr ] || exit 1
+TAG="pbr-directbridge"
 
-# Wait for the custom network configuration
-[ "$(uci -q get network.DirectBridge.device || true)" = "br-direct" ] || exit 1
+# PBR must be installed
+if [ ! -x /etc/init.d/pbr ]; then
+    logger -t "$TAG" "PBR not installed, waiting."
+    exit 1
+fi
 
-[ "$(uci -q get network.DirectBridge.gateway || true)" = "192.168.2.1" ] || exit 1
+# Verify DirectBridge device
+if [ "$(uci -q get network.DirectBridge.device)" != "br-direct" ]; then
+    logger -t "$TAG" "DirectBridge device not ready, waiting."
+    exit 1
+fi
+
+# Verify DirectBridge gateway
+if [ "$(uci -q get network.DirectBridge.gateway)" != "192.168.2.1" ]; then
+    logger -t "$TAG" "DirectBridge gateway not ready, waiting."
+    exit 1
+fi
 
 # Configure PBR uplink
 uci set pbr.config.uplink_interface='DirectBridge'
@@ -18,5 +31,6 @@ uci commit pbr
 # Enable PBR at boot
 /etc/init.d/pbr enable
 
-echo "PBR DirectBridge configuration applied."
+logger -t "$TAG" "PBR uplink configured: DirectBridge"
+
 exit 0
