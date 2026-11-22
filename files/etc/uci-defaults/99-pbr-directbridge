@@ -1,0 +1,22 @@
+
+#!/bin/sh
+# Automatically configure PBR on first boot.
+# Keep this script until PBR and DirectBridge are ready.
+
+# Wait for PBR installation
+[ -x /etc/init.d/pbr ] || exit 1
+
+# Wait for the custom network configuration
+[ "$(uci -q get network.DirectBridge.device || true)" = "br-direct" ] || exit 1
+
+[ "$(uci -q get network.DirectBridge.gateway || true)" = "192.168.2.1" ] || exit 1
+
+# Configure PBR uplink
+uci set pbr.config.uplink_interface='DirectBridge'
+uci commit pbr
+
+# Enable PBR at boot
+/etc/init.d/pbr enable
+
+echo "PBR DirectBridge configuration applied."
+exit 0
