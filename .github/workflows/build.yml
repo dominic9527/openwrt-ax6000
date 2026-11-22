@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - "config/**"
+      - "files/**"
       - ".github/workflows/build.yml"
 
 permissions:
@@ -73,13 +74,6 @@ jobs:
       - name: Apply configuration
         run: |
           cp config/ax6000.config openwrt/.config
-      - name: Apply custom files
-        working-directory: openwrt
-        run: |
-          mkdir -p files
-          cp -a ../files/. files/
-          chmod 755 files/usr/bin/restore-pbr.sh
-          chmod 755 files/etc/uci-defaults/99-pbr-directbridge
 
       - name: Generate and verify configuration
         working-directory: openwrt
@@ -100,7 +94,10 @@ jobs:
             luci-proto-wireguard \
             ip-full \
             tcpdump \
-            ethtool
+            ethtool \
+            pbr \
+            luci-app-pbr \
+            luci-i18n-pbr-zh-cn
           do
             if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
               echo "ERROR: ${package} is not enabled!"
@@ -111,7 +108,7 @@ jobs:
           echo "===== Check unwanted packages ====="
 
           if grep -E \
-            '^CONFIG_PACKAGE_(pbr|luci-app-pbr|tailscale|openvpn|docker)(=y|=m)$' \
+            '^CONFIG_PACKAGE_(tailscale|openvpn|docker)(=y|=m)$' \
             .config; then
             echo "ERROR: unwanted package detected!"
             exit 1
@@ -123,6 +120,22 @@ jobs:
 
           echo "Configuration verification passed."
 
+      - name: Apply custom files
+        working-directory: openwrt
+        run: |
+          test -f ../files/usr/bin/restore-pbr.sh
+          test -f ../files/etc/uci-defaults/99-pbr-directbridge
+
+          mkdir -p files
+          cp -a ../files/. files/
+
+          chmod 755 files/usr/bin/restore-pbr.sh
+          chmod 755 files/etc/uci-defaults/99-pbr-directbridge
+
+          echo "===== Verify custom files ====="
+          ls -l files/usr/bin/restore-pbr.sh
+          ls -l files/etc/uci-defaults/99-pbr-directbridge
+
       - name: Download sources
         working-directory: openwrt
         run: |
@@ -133,7 +146,22 @@ jobs:
         run: |
           make -j2 V=s
 
-     
+      - name: Verify PBR recovery files
+        working-directory: openwrt
+        run: |
+          ROOTFS=$(find build_dir -type d \
+            -path '*/root-mediatek' -print -quit)
+
+          if [ -z "$ROOTFS" ]; then
+            echo "ERROR: Root filesystem not found."
+            exit 1
+          fi
+
+          test -f "$ROOTFS/usr/bin/restore-pbr.sh"
+          test -f "$ROOTFS/etc/uci-defaults/99-pbr-directbridge"
+
+          echo "PBR recovery files verified in: $ROOTFS"
+
       - name: Collect firmware and manifest
         working-directory: openwrt
         run: |
