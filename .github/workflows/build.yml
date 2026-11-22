@@ -158,9 +158,10 @@ jobs:
 
           echo "===== Firmware files ====="
           ls -lh
-
           test -f \
-            xiaomi_redmi-router-ax6000-ubootmod-squashfs-sysupgrade.itb
+                 ../artifacts/openwrt-mediatek-filogic-xiaomi_redmi-router-ax6000-ubootmod-squashfs-sysupgrade.itb
+
+                   echo "Firmware check passed."
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
