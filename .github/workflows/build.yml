@@ -73,6 +73,11 @@ jobs:
       - name: Apply configuration
         run: |
           cp config/ax6000.config openwrt/.config
+      - name: Apply custom files
+        working-directory: openwrt
+        run: |
+          mkdir -p files
+          cp -a ../files/. files/
 
       - name: Generate and verify configuration
         working-directory: openwrt
