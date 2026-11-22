@@ -1,9 +1,8 @@
 
-name: Build Official OpenWrt 25.12 - Redmi AX6000
+name: Official OpenWrt 25.12 - Redmi AX6000
 
 on:
   workflow_dispatch:
-
   push:
     paths:
       - "config/**"
@@ -18,12 +17,10 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. Checkout build configuration
-      - name: Checkout build repository
+      - name: Checkout configuration
         uses: actions/checkout@v4
 
-      # 2. Install build dependencies
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -39,19 +36,23 @@ jobs:
             git \
             libncurses-dev \
             libssl-dev \
+            libelf-dev \
             python3 \
             python3-setuptools \
+            python3-yaml \
+            python3-pyelftools \
             rsync \
             swig \
             unzip \
             zlib1g-dev \
+            zstd \
+            device-tree-compiler \
+            xsltproc \
             file \
             wget \
-            curl \
-            ccache
+            curl
 
-      # 3. Clone official OpenWrt source
-      - name: Clone OpenWrt 25.12
+      - name: Clone official OpenWrt
         run: |
           git clone \
             --branch openwrt-25.12 \
@@ -63,58 +64,69 @@ jobs:
           echo "OPENWRT_COMMIT=$(git rev-parse HEAD)" \
             >> "$GITHUB_ENV"
 
-      # 4. Update feeds
-      - name: Update feeds
+      - name: Update and install feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 5. Apply configuration
-      - name: Apply AX6000 configuration
+      - name: Apply configuration
         run: |
           cp config/ax6000.config openwrt/.config
 
-      # 6. Generate final configuration
       - name: Generate and verify configuration
         working-directory: openwrt
         run: |
           make defconfig
 
-          echo "===== Target ====="
-          grep -E '^CONFIG_TARGET_' .config
+          echo "===== Target profile ====="
+          grep '^CONFIG_TARGET_mediatek_filogic_DEVICE_' .config
 
-          echo "===== Required packages ====="
-          grep -E \
-            '^CONFIG_PACKAGE_(luci|luci-ssl|kmod-wireguard|wireguard-tools|luci-proto-wireguard|ip-full|tcpdump|ethtool)=' \
-            .config
+          echo "===== Verify required packages ====="
 
-          echo "===== Forbidden packages ====="
+          for package in \
+            luci \
+            luci-ssl-openssl \
+            luci-app-firewall \
+            kmod-wireguard \
+            wireguard-tools \
+            luci-proto-wireguard \
+            ip-full \
+            tcpdump \
+            ethtool
+          do
+            if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
+              echo "ERROR: ${package} is not enabled!"
+              exit 1
+            fi
+          done
+
+          echo "===== Check unwanted packages ====="
+
           if grep -E \
-            '^CONFIG_PACKAGE_(pbr|luci-app-pbr|tailscale|openvpn|docker)=' \
+            '^CONFIG_PACKAGE_(pbr|luci-app-pbr|tailscale|openvpn|docker)(=y|=m)$' \
             .config; then
-            echo "Unexpected package selection!"
+            echo "ERROR: unwanted package detected!"
             exit 1
           fi
 
-          grep -q \
-            '^CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_redmi-router-ax6000-ubootmod=y' \
+          grep -qx \
+            'CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_redmi-router-ax6000-ubootmod=y' \
             .config
 
-      # 7. Download sources
-      - name: Download package sources
+          echo "Configuration verification passed."
+
+      - name: Download sources
         working-directory: openwrt
         run: |
           make download -j4
 
-      # 8. Compile firmware
       - name: Compile firmware
         working-directory: openwrt
         run: |
           make -j2 V=s
 
-      # 9. Collect firmware and build information
-      - name: Collect build artifacts
+      - name: Collect firmware and manifest
         working-directory: openwrt
         run: |
           mkdir -p ../artifacts
@@ -122,12 +134,11 @@ jobs:
           find bin/targets/mediatek/filogic \
             -maxdepth 1 \
             -type f \
-            \( \
-              -name '*ax6000*' \
-              -o -name '*.manifest' \
-              -o -name 'sha256sums' \
-            \) \
+            -name '*ax6000*' \
             -exec cp {} ../artifacts/ \;
+
+          cp bin/targets/mediatek/filogic/sha256sums \
+            ../artifacts/ 2>/dev/null || true
 
           cp .config ../artifacts/defconfig
           cp ../config/ax6000.config ../artifacts/ax6000.config
@@ -141,12 +152,16 @@ jobs:
           } > ../artifacts/build-info.txt
 
           cd ../artifacts
-          sha256sum *.itb *.bin > custom-sha256sums.txt 2>/dev/null || true
 
-          echo "===== Generated files ====="
+          sha256sum *.itb *.bin \
+            > custom-sha256sums.txt
+
+          echo "===== Firmware files ====="
           ls -lh
 
-      # 10. Upload firmware
+          test -f \
+            xiaomi_redmi-router-ax6000-ubootmod-squashfs-sysupgrade.itb
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
