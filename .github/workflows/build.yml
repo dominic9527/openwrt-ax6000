@@ -4,6 +4,9 @@ name: Official OpenWrt 25.12.6 Stable - Redmi AX6000
 # ==========================================================
 # Redmi AX6000 U-Boot Mod
 # Official OpenWrt Stable Release
+# MediaTek Filogic / Open-source mt76
+#
+# English LuCI / HTTPS / WireGuard / PBR / Full DNS
 # ==========================================================
 
 on:
@@ -18,8 +21,14 @@ on:
 permissions:
   contents: read
 
+# Prevent duplicate AX6000 builds from running together.
+concurrency:
+  group: ax6000-firmware-build
+  cancel-in-progress: true
+
 jobs:
   build:
+    name: Build Redmi AX6000 Firmware
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
@@ -100,19 +109,24 @@ jobs:
 
 
       # ----------------------------------------------------
-      # 4. Update and install official feeds
-      # ---------------------------------------------------
+      # 4. Update and install required feeds
+      # ----------------------------------------------------
+
       - name: Update and install feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
 
-          # Only install packages required by this firmware
+          echo "===== Install LuCI packages ====="
+
           ./scripts/feeds install luci
           ./scripts/feeds install luci-app-firewall
           ./scripts/feeds install luci-proto-wireguard
-          ./scripts/feeds install pbr
           ./scripts/feeds install luci-app-pbr
+
+          echo "===== Install PBR package ====="
+
+          ./scripts/feeds install pbr
 
 
       # ----------------------------------------------------
@@ -121,6 +135,8 @@ jobs:
 
       - name: Apply configuration
         run: |
+          test -f config/ax6000.config
+
           cp config/ax6000.config openwrt/.config
 
 
@@ -142,16 +158,19 @@ jobs:
             .config
 
 
-          echo "===== Verify LuCI and Chinese ====="
+          echo "===== Verify LuCI ====="
 
           for package in \
             luci \
             luci-ssl-openssl \
-            luci-app-firewall \
-            luci-i18n-base-zh-cn \
-            luci-i18n-firewall-zh-cn
+            luci-app-firewall
           do
-            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+            if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
+              echo "ERROR: LuCI package missing: ${package}"
+              exit 1
+            fi
+
+            echo "OK: ${package}"
           done
 
 
@@ -162,7 +181,12 @@ jobs:
             wireguard-tools \
             luci-proto-wireguard
           do
-            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+            if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
+              echo "ERROR: WireGuard package missing: ${package}"
+              exit 1
+            fi
+
+            echo "OK: ${package}"
           done
 
 
@@ -170,10 +194,14 @@ jobs:
 
           for package in \
             pbr \
-            luci-app-pbr \
-            luci-i18n-pbr-zh-cn
+            luci-app-pbr
           do
-            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+            if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
+              echo "ERROR: PBR package missing: ${package}"
+              exit 1
+            fi
+
+            echo "OK: ${package}"
           done
 
 
@@ -184,7 +212,12 @@ jobs:
             tcpdump \
             ethtool
           do
-            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+            if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
+              echo "ERROR: Network diagnostic package missing: ${package}"
+              exit 1
+            fi
+
+            echo "OK: ${package}"
           done
 
 
@@ -209,6 +242,8 @@ jobs:
               echo "ERROR: dnsmasq-full feature missing: ${feature}"
               exit 1
             fi
+
+            echo "OK: dnsmasq-full ${feature}"
           done
 
           grep -qx \
@@ -225,10 +260,22 @@ jobs:
             exit 1
           fi
 
+          echo "OK: dnsmasq-full selected."
+
 
           echo "===== Verify IPv6 ====="
 
           grep -qx 'CONFIG_IPV6=y' .config
+
+
+          echo "===== Verify Chinese language is disabled ====="
+
+          if grep -qx 'CONFIG_LUCI_LANG_zh_Hans=y' .config; then
+            echo "ERROR: Chinese language is still enabled!"
+            exit 1
+          fi
+
+          echo "OK: Chinese language disabled."
 
 
           echo "===== Check unwanted packages ====="
@@ -239,6 +286,8 @@ jobs:
             echo "ERROR: unwanted package detected!"
             exit 1
           fi
+
+          echo "OK: unwanted packages not selected."
 
 
           echo "===== Configuration verification passed ====="
@@ -381,6 +430,7 @@ jobs:
             echo "Target: mediatek/filogic"
             echo "Device: xiaomi_redmi-router-ax6000-ubootmod"
             echo "Wireless: Open-source mt76"
+            echo "LuCI: English"
             echo "DNS: dnsmasq-full"
             echo "DNS nftset: enabled"
             echo "DNS IPset: enabled"
