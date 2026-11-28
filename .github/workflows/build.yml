@@ -1,8 +1,14 @@
 
-name: Official OpenWrt 25.12 - Redmi AX6000
+name: Official OpenWrt 25.12.6 Stable - Redmi AX6000
+
+# ==========================================================
+# Redmi AX6000 U-Boot Mod
+# Official OpenWrt Stable Release
+# ==========================================================
 
 on:
   workflow_dispatch:
+
   push:
     paths:
       - "config/**"
@@ -18,12 +24,23 @@ jobs:
     timeout-minutes: 360
 
     steps:
+
+      # ----------------------------------------------------
+      # 1. Checkout build configuration
+      # ----------------------------------------------------
+
       - name: Checkout configuration
         uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------
+      # 2. Install build dependencies
+      # ----------------------------------------------------
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             build-essential \
             clang \
@@ -51,19 +68,40 @@ jobs:
             xsltproc \
             file \
             wget \
-            curl
+            curl \
+            binutils
 
-      - name: Clone official OpenWrt
+
+      # ----------------------------------------------------
+      # 3. Clone official OpenWrt stable release
+      # ----------------------------------------------------
+
+      - name: Clone official OpenWrt Stable
         run: |
           git clone \
-            --branch openwrt-25.12 \
+            --branch v25.12.6 \
             --single-branch \
             https://github.com/openwrt/openwrt.git \
             openwrt
 
           cd openwrt
+
+          echo "OPENWRT_VERSION=v25.12.6" \
+            >> "$GITHUB_ENV"
+
           echo "OPENWRT_COMMIT=$(git rev-parse HEAD)" \
             >> "$GITHUB_ENV"
+
+          echo "===== OpenWrt release ====="
+          git describe --tags --exact-match
+
+          echo "===== OpenWrt commit ====="
+          git log -1 --oneline
+
+
+      # ----------------------------------------------------
+      # 4. Update and install official feeds
+      # ----------------------------------------------------
 
       - name: Update and install feeds
         working-directory: openwrt
@@ -71,39 +109,122 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+
+      # ----------------------------------------------------
+      # 5. Apply AX6000 configuration
+      # ----------------------------------------------------
+
       - name: Apply configuration
         run: |
           cp config/ax6000.config openwrt/.config
+
+
+      # ----------------------------------------------------
+      # 6. Generate and verify configuration
+      # ----------------------------------------------------
 
       - name: Generate and verify configuration
         working-directory: openwrt
         run: |
           make defconfig
 
-          echo "===== Target profile ====="
+          echo "===== Verify target device ====="
+
           grep '^CONFIG_TARGET_mediatek_filogic_DEVICE_' .config
 
-          echo "===== Verify required packages ====="
+          grep -qx \
+            'CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_redmi-router-ax6000-ubootmod=y' \
+            .config
+
+
+          echo "===== Verify LuCI and Chinese ====="
 
           for package in \
             luci \
             luci-ssl-openssl \
             luci-app-firewall \
+            luci-i18n-base-zh-cn \
+            luci-i18n-firewall-zh-cn
+          do
+            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+          done
+
+
+          echo "===== Verify WireGuard ====="
+
+          for package in \
             kmod-wireguard \
             wireguard-tools \
-            luci-proto-wireguard \
-            ip-full \
-            tcpdump \
-            ethtool \
+            luci-proto-wireguard
+          do
+            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+          done
+
+
+          echo "===== Verify PBR ====="
+
+          for package in \
             pbr \
             luci-app-pbr \
             luci-i18n-pbr-zh-cn
           do
-            if ! grep -qx "CONFIG_PACKAGE_${package}=y" .config; then
-              echo "ERROR: ${package} is not enabled!"
+            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+          done
+
+
+          echo "===== Verify network diagnostics ====="
+
+          for package in \
+            ip-full \
+            tcpdump \
+            ethtool
+          do
+            grep -qx "CONFIG_PACKAGE_${package}=y" .config
+          done
+
+
+          echo "===== Verify dnsmasq-full ====="
+
+          grep -qx \
+            'CONFIG_PACKAGE_dnsmasq-full=y' .config
+
+          for feature in \
+            dhcp \
+            dhcpv6 \
+            dnssec \
+            auth \
+            ipset \
+            nftset \
+            conntrack \
+            noid \
+            tftp
+          do
+            if ! grep -qx \
+              "CONFIG_PACKAGE_dnsmasq_full_${feature}=y" .config; then
+              echo "ERROR: dnsmasq-full feature missing: ${feature}"
               exit 1
             fi
           done
+
+          grep -qx \
+            'CONFIG_PACKAGE_nftables-json=y' .config
+
+          echo "Full dnsmasq feature configuration verified."
+
+
+          echo "===== Verify standard dnsmasq is not selected ====="
+
+          if grep -Eq \
+            '^CONFIG_PACKAGE_dnsmasq(-dhcpv6)?=y$' .config; then
+            echo "ERROR: standard dnsmasq variant selected!"
+            exit 1
+          fi
+
+
+          echo "===== Verify IPv6 ====="
+
+          grep -qx 'CONFIG_IPV6=y' .config
+
 
           echo "===== Check unwanted packages ====="
 
@@ -114,37 +235,59 @@ jobs:
             exit 1
           fi
 
-          grep -qx \
-            'CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_redmi-router-ax6000-ubootmod=y' \
-            .config
 
-          echo "Configuration verification passed."
+          echo "===== Configuration verification passed ====="
+
+
+      # ----------------------------------------------------
+      # 7. Apply custom PBR recovery files
+      # ----------------------------------------------------
 
       - name: Apply custom files
         working-directory: openwrt
         run: |
           test -f ../files/usr/bin/restore-pbr.sh
+
           test -f ../files/etc/uci-defaults/99-pbr-directbridge
 
           mkdir -p files
+
           cp -a ../files/. files/
 
           chmod 755 files/usr/bin/restore-pbr.sh
+
           chmod 755 files/etc/uci-defaults/99-pbr-directbridge
 
           echo "===== Verify custom files ====="
+
           ls -l files/usr/bin/restore-pbr.sh
+
           ls -l files/etc/uci-defaults/99-pbr-directbridge
+
+
+      # ----------------------------------------------------
+      # 8. Download package sources
+      # ----------------------------------------------------
 
       - name: Download sources
         working-directory: openwrt
         run: |
           make download -j4
 
+
+      # ----------------------------------------------------
+      # 9. Compile firmware
+      # ----------------------------------------------------
+
       - name: Compile firmware
         working-directory: openwrt
         run: |
           make -j2 V=s
+
+
+      # ----------------------------------------------------
+      # 10. Verify PBR recovery files in root filesystem
+      # ----------------------------------------------------
 
       - name: Verify PBR recovery files
         working-directory: openwrt
@@ -153,14 +296,58 @@ jobs:
             -path '*/root-mediatek' -print -quit)
 
           if [ -z "$ROOTFS" ]; then
-            echo "ERROR: Root filesystem not found."
+            echo "ERROR: Root filesystem not found!"
             exit 1
           fi
 
           test -f "$ROOTFS/usr/bin/restore-pbr.sh"
+
           test -f "$ROOTFS/etc/uci-defaults/99-pbr-directbridge"
 
-          echo "PBR recovery files verified in: $ROOTFS"
+          echo "PBR recovery files verified: $ROOTFS"
+
+
+      # ----------------------------------------------------
+      # 11. Verify dnsmasq-full binary and nftset support
+      # ----------------------------------------------------
+
+      - name: Verify dnsmasq-full
+        working-directory: openwrt
+        run: |
+          ROOTFS=$(find build_dir -type d \
+            -path '*/root-mediatek' -print -quit)
+
+          if [ -z "$ROOTFS" ]; then
+            echo "ERROR: Root filesystem not found!"
+            exit 1
+          fi
+
+          DNSMASQ="$ROOTFS/usr/sbin/dnsmasq"
+
+          if [ ! -f "$DNSMASQ" ]; then
+            echo "ERROR: dnsmasq binary not found!"
+            exit 1
+          fi
+
+          echo "===== Check dnsmasq nftset support ====="
+
+          if ! strings "$DNSMASQ" | grep -qi 'nftset'; then
+            echo "ERROR: nftset support not found in dnsmasq!"
+            exit 1
+          fi
+
+          echo "dnsmasq nftset support verified."
+
+
+          echo "===== Check dnsmasq package ====="
+
+          find bin/packages -type f \
+            -name 'dnsmasq-full*.apk' -print
+
+
+      # ----------------------------------------------------
+      # 12. Collect firmware and build information
+      # ----------------------------------------------------
 
       - name: Collect firmware and manifest
         working-directory: openwrt
@@ -177,15 +364,27 @@ jobs:
             ../artifacts/ 2>/dev/null || true
 
           cp .config ../artifacts/defconfig
-          cp ../config/ax6000.config ../artifacts/ax6000.config
+
+          cp ../config/ax6000.config \
+            ../artifacts/ax6000.config
+
 
           {
-            echo "OpenWrt branch: openwrt-25.12"
+            echo "OpenWrt version: $OPENWRT_VERSION"
             echo "OpenWrt commit: $OPENWRT_COMMIT"
             echo "Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             echo "Target: mediatek/filogic"
             echo "Device: xiaomi_redmi-router-ax6000-ubootmod"
+            echo "Wireless: Open-source mt76"
+            echo "DNS: dnsmasq-full"
+            echo "DNS nftset: enabled"
+            echo "DNS IPset: enabled"
+            echo "DNS Conntrack: enabled"
+            echo "DNS DNSSEC: enabled"
+            echo "PBR: enabled"
+            echo "WireGuard: enabled"
           } > ../artifacts/build-info.txt
+
 
           cd ../artifacts
 
@@ -194,21 +393,27 @@ jobs:
             -print -quit)
 
           if [ -z "$FIRMWARE" ]; then
-            echo "ERROR: AX6000 sysupgrade firmware not found"
+            echo "ERROR: AX6000 sysupgrade firmware not found!"
             exit 1
           fi
 
           sha256sum "$FIRMWARE" > custom-sha256sums.txt
 
-          echo "===== All artifacts ====="
+          echo "===== Build artifacts ====="
+
           ls -lh
 
           echo "Firmware check passed: $FIRMWARE"
 
+
+      # ----------------------------------------------------
+      # 13. Upload firmware artifacts
+      # ----------------------------------------------------
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Redmi-AX6000-OpenWrt-25.12-Ubootmod
+          name: Redmi-AX6000-OpenWrt-25.12.6-Stable
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
