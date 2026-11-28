@@ -101,13 +101,18 @@ jobs:
 
       # ----------------------------------------------------
       # 4. Update and install official feeds
-      # ----------------------------------------------------
-
+      # ---------------------------------------------------
       - name: Update and install feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
+
+          # Only install packages required by this firmware
+          ./scripts/feeds install luci
+          ./scripts/feeds install luci-app-firewall
+          ./scripts/feeds install luci-proto-wireguard
+          ./scripts/feeds install pbr
+          ./scripts/feeds install luci-app-pbr
 
 
       # ----------------------------------------------------
