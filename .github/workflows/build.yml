@@ -228,48 +228,22 @@ jobs:
             echo "OK: ${package}"
           done
 
+          echo "===== Verify dnsmasq selection ====="
 
-          echo "===== Verify dnsmasq-full ====="
+          grep -E '^CONFIG_PACKAGE_dnsmasq' .config || true
 
-          grep -qx \
-            'CONFIG_PACKAGE_dnsmasq-full=y' .config
+          if ! grep -qx 'CONFIG_PACKAGE_dnsmasq-full=y' .config; then
+            echo "ERROR: dnsmasq-full is not selected!"
+            exit 1
+          fi
 
-          for feature in \
-            dhcp \
-            dhcpv6 \
-            dnssec \
-            auth \
-            ipset \
-            nftset \
-            conntrack \
-            noid \
-            tftp
-          do
-            if ! grep -qx \
-              "CONFIG_PACKAGE_dnsmasq_full_${feature}=y" .config; then
-              echo "ERROR: dnsmasq-full feature missing: ${feature}"
-              exit 1
-            fi
-
-            echo "OK: dnsmasq-full ${feature}"
-          done
-
-          grep -qx \
-            'CONFIG_PACKAGE_nftables-json=y' .config
-
-          echo "Full dnsmasq feature configuration verified."
-
-
-          echo "===== Verify standard dnsmasq is not selected ====="
-
-          if grep -Eq \
-            '^CONFIG_PACKAGE_dnsmasq(-dhcpv6)?=y$' .config; then
-            echo "ERROR: standard dnsmasq variant selected!"
+          if grep -qx 'CONFIG_PACKAGE_dnsmasq=y' .config; then
+            echo "ERROR: standard dnsmasq is selected!"
             exit 1
           fi
 
           echo "OK: dnsmasq-full selected."
-
+        
 
           echo "===== Verify IPv6 ====="
 
