@@ -21,7 +21,7 @@ on:
 permissions:
   contents: read
 
-# Prevent duplicate AX6000 builds from running together.
+# Prevent duplicate builds of this firmware.
 concurrency:
   group: ax6000-firmware-build
   cancel-in-progress: true
@@ -112,21 +112,29 @@ jobs:
       # 4. Update and install required feeds
       # ----------------------------------------------------
 
-      - name: Update and install feeds
+      - name: Update and install required feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
 
           echo "===== Install LuCI packages ====="
 
-          ./scripts/feeds install luci
-          ./scripts/feeds install luci-app-firewall
-          ./scripts/feeds install luci-proto-wireguard
-          ./scripts/feeds install luci-app-pbr
+          ./scripts/feeds install -p luci \
+            luci \
+            luci-ssl-openssl \
+            luci-app-firewall \
+            luci-proto-wireguard \
+            luci-app-pbr
 
           echo "===== Install PBR package ====="
 
-          ./scripts/feeds install pbr
+          ./scripts/feeds install -p packages pbr
+
+          echo "===== Verify feed package definitions ====="
+
+          test -f feeds/luci/collections/luci-ssl-openssl/Makefile
+
+          echo "LuCI OpenSSL HTTPS collection found."
 
 
       # ----------------------------------------------------
@@ -158,7 +166,7 @@ jobs:
             .config
 
 
-          echo "===== Verify LuCI ====="
+          echo "===== Verify LuCI and HTTPS ====="
 
           for package in \
             luci \
@@ -289,7 +297,6 @@ jobs:
 
           echo "OK: unwanted packages not selected."
 
-
           echo "===== Configuration verification passed ====="
 
 
@@ -385,7 +392,9 @@ jobs:
 
           echo "===== Check dnsmasq nftset support ====="
 
-          if ! strings "$DNSMASQ" | grep -qi 'nftset'; then
+          strings "$DNSMASQ" > /tmp/dnsmasq-strings.txt
+
+          if ! grep -qi 'nftset' /tmp/dnsmasq-strings.txt; then
             echo "ERROR: nftset support not found in dnsmasq!"
             exit 1
           fi
@@ -431,6 +440,7 @@ jobs:
             echo "Device: xiaomi_redmi-router-ax6000-ubootmod"
             echo "Wireless: Open-source mt76"
             echo "LuCI: English"
+            echo "HTTPS: OpenSSL"
             echo "DNS: dnsmasq-full"
             echo "DNS nftset: enabled"
             echo "DNS IPset: enabled"
