@@ -3858,6 +3858,21 @@ define Device/tplink_eap683-lr
 endef
 TARGET_DEVICES += tplink_eap683-lr
 
+define Device/tplink_ex820v
+  DEVICE_VENDOR := TP-Link
+  DEVICE_MODEL := EX820v
+  DEVICE_DTS := mt7986a-tplink-ex820v
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
+	kmod-usb3 kmod-usb-ledtrig-usbport
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 40960k
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata | check-size
+endef
+TARGET_DEVICES += tplink_ex820v
+
 define Device/tplink_re6000xd
   DEVICE_VENDOR := TP-Link
   DEVICE_MODEL := RE6000XD
@@ -4603,6 +4618,14 @@ define Device/zyxel_nwa50ax-pro
   ZYXEL_MODEL_IDS := 80e1 81e1
 endef
 TARGET_DEVICES += zyxel_nwa50ax-pro
+
+define Device/zyxel_nwa55ax-pro
+  $(call Device/zyxel_filogic_common)
+  DEVICE_MODEL := NWA55AX Pro
+  DEVICE_DTS := mt7981b-zyxel-nwa55ax-pro
+  ZYXEL_MODEL_IDS := a3e1
+endef
+TARGET_DEVICES += zyxel_nwa55ax-pro
 
 define Device/zyxel_nwa55ax-ptp
   $(call Device/zyxel_filogic_common)
